@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Simplified Virtual Try-On</string>
+    <string name="swap_clothing">Replace garment</string>
+    <string name="change_person">Change person</string>
+    <string name="change_clothing">Change clothing</string>
+</resources>
