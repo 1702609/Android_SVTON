@@ -58,7 +58,7 @@
         app:layout_constraintStart_toStartOf="@+id/PersonView"
         app:layout_constraintTop_toTopOf="parent"
         android:layout_marginTop="280dp"
-        />
+        android:onClick="selectClothing"/>
 
     <Button
         android:id="@+id/ChangeClothingButton"

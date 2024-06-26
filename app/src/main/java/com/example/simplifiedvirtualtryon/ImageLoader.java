@@ -65,4 +65,12 @@ public class ImageLoader{
         return personImageName;
     }
 
+    public List<String> getClothingList(){
+        return listOfClothingImages;
+    }
+
+    public List<String> getPersonList(){
+        return listOfPersonImages;
+    }
+
 }

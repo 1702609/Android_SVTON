@@ -14,11 +14,12 @@ public class RecyclerViewCustomAdapter extends RecyclerView.Adapter<RecyclerView
     public RecyclerViewCustomAdapter(Bitmap[] bitmaps) {
         bitmapsLocal = bitmaps;
     }
-    public static class ViewHolder extends  RecyclerView.ViewHolder{
-        private final ImageView imageView;
+    public static class ViewHolder extends RecyclerView.ViewHolder{
+        ImageView imageView;
+        RecyclerView recyclerView;
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
-            imageView = itemView.findViewById(R.id.imageView);
+            imageView = itemView.findViewById(R.id.singleImage);
         }
         public ImageView getImageView(){
             return imageView;
@@ -27,16 +28,14 @@ public class RecyclerViewCustomAdapter extends RecyclerView.Adapter<RecyclerView
 
     @NonNull
     @Override
-    public RecyclerViewCustomAdapter.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+    public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
         View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.image_row_items, parent, false);
         return new ViewHolder(view);
     }
 
-
-
     @Override
-    public void onBindViewHolder(@NonNull RecyclerViewCustomAdapter.ViewHolder holder, int position) {
-        holder.getImageView().setImageBitmap(bitmapsLocal[position]);
+    public void onBindViewHolder(ViewHolder holder, int position) {
+        holder.imageView.setImageBitmap(bitmapsLocal[position]);
     }
 
     @Override
