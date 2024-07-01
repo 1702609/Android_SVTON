@@ -53,14 +53,26 @@ public class ImageLoader{
         }
     }
 
-    public String getClothingName(){
-        int clothing_id = random.nextInt(listOfClothingImages.size());
+    public String getClothingName(int index) {
+        int clothing_id;
+        if (index == -1) {
+            clothing_id = random.nextInt(listOfClothingImages.size());
+        }
+        else {
+            clothing_id = index;
+        }
         String clothingImageName = listOfClothingImages.get(clothing_id);
         return clothingImageName;
     }
 
-    public String getPersonName(){
-        int person_id = random.nextInt(listOfPersonImages.size());
+    public String getPersonName(int index){
+        int person_id;
+        if (index == -1) {
+            person_id = random.nextInt(listOfPersonImages.size());
+        }
+        else {
+            person_id = index;
+        }
         String personImageName = listOfPersonImages.get(person_id);
         return personImageName;
     }

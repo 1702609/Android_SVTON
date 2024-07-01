@@ -2,6 +2,7 @@ package com.example.simplifiedvirtualtryon;
 
 import android.content.Intent;
 import android.os.Bundle;
+
 import androidx.appcompat.app.AppCompatActivity;
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -34,25 +35,26 @@ public class MainActivity extends AppCompatActivity implements Runnable {
     private ImageView personImageView;
     private ImageView clothingImageView;
     private ImageView resultImageView;
+    private Module segmentation_model;
+    private Module affine_model;
+    private Module warping_model;
+    private Module tryon_model;
     private ImageLoader imageLoader;
-    private Button mButtonSegment;
-    private ProgressBar mProgressBar;
-    private Module segmentation_model = null;
-    private Module affine_model = null;
-    private Module warping_model = null;
-    private Module tryon_model = null;
+    private Bitmap person_image;
+    Bitmap clothing_image;
 
-    private Random random = new Random();
 
-    private Tensor people_inital_segment = null;
-    private Tensor people_mask_tensor = null;
+    private Tensor people_inital_segment;
+    private Tensor people_mask_tensor;
 
-    private Tensor skeleton_tensor = null;
-    private Tensor clothing_tensor = null;
-    private Tensor clothing_mask_tensor = null;
-    private Tensor people_tensor = null;
-    private Tensor blurred_mask_tensor = null;
-    private Button inference_button = null;
+    private Tensor skeleton_tensor;
+    private Tensor clothing_tensor;
+    private Tensor clothing_mask_tensor;
+    private Tensor people_tensor;
+    private Tensor blurred_mask_tensor;
+    private Button inference_button;
+    private Bitmap blurred_mask;
+
     public static String assetFilePath(Context context, String assetName) throws IOException {
         File file = new File(context.getFilesDir(), assetName);
         if (file.exists() && file.length() > 0) {
@@ -72,45 +74,69 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         }
     }
 
+    private void loadPersonData(String personImageName) throws IOException {
+        person_image = BitmapFactory.decodeStream(getAssets().open("people/" + personImageName));
+        people_tensor = TensorImageUtils.bitmapToFloat32Tensor(person_image, TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
+        people_mask_tensor = ProcessBitmap.standardiseMask(CustomTensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("people_mask/" + personImageName.replace(".jpg", ".png")))));
+        people_inital_segment = CustomTensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("people_segment/" + personImageName.replace(".jpg", ".png"))));
+        blurred_mask = ProcessBitmap.resizeMask(BitmapFactory.decodeStream(getAssets().open("people_mask/" + personImageName.replace(".jpg", ".png"))));
+        blurred_mask_tensor = CustomTensorImageUtils.bitmapToFloat32Tensor(blurred_mask);
+        skeleton_tensor = TensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("people_skeleton/" + personImageName)), TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
+        personImageView.setImageBitmap(person_image);
+        }
+
+    private void loadClothingData(String clothingName) throws IOException {
+        clothing_image = BitmapFactory.decodeStream(getAssets().open("clothing/" + clothingName));
+        clothing_tensor = TensorImageUtils.bitmapToFloat32Tensor(clothing_image, TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
+        clothing_mask_tensor = ProcessBitmap.standardiseMask(CustomTensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("clothing_mask/" + clothingName))));
+        clothingImageView.setImageBitmap(clothing_image);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        int per_pos = intent.getIntExtra("person_index", -1);
+        int cloth_pos = intent.getIntExtra("clothing_index", -1);
+        if (per_pos != -1) {
+            String personImageName = imageLoader.getPersonName(per_pos);
+            try {
+                loadPersonData(personImageName);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        if (cloth_pos != -1) {
+            String clothingImageName = imageLoader.getClothingName(cloth_pos);
+            try {
+                loadClothingData(clothingImageName);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         imageLoader = ImageLoader.getInstance(this);
-
-        String personImageName = imageLoader.getPersonName();
-        String clothingImageName = imageLoader.getClothingName();
-
-        Bitmap clothing_image = null;
-        Bitmap person_image = null;
-        Bitmap blurred_mask = null;
+        String personImageName = imageLoader.getPersonName(-1);
+        String clothingImageName = imageLoader.getClothingName(-1);
+        personImageView = findViewById(R.id.PersonView);
+        clothingImageView = findViewById(R.id.ClothingView);
+        resultImageView = findViewById(R.id.ResultView);
+        inference_button = findViewById(R.id.InferenceButton);
         try {
-            clothing_image = BitmapFactory.decodeStream(getAssets().open("clothing/" + clothingImageName));
-            clothing_tensor = TensorImageUtils.bitmapToFloat32Tensor(clothing_image, TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
-            clothing_mask_tensor = ProcessBitmap.standardiseMask(CustomTensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("clothing_mask/" + clothingImageName))));
-
-            person_image = BitmapFactory.decodeStream(getAssets().open("people/" + personImageName));
-            people_tensor = TensorImageUtils.bitmapToFloat32Tensor(person_image, TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
-            people_mask_tensor = ProcessBitmap.standardiseMask(CustomTensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("people_mask/" + personImageName.replace(".jpg", ".png")))));
-            people_inital_segment = CustomTensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("people_segment/" + personImageName.replace(".jpg", ".png"))));
-
-            blurred_mask = ProcessBitmap.resizeMask(BitmapFactory.decodeStream(getAssets().open("people_mask/" + personImageName.replace(".jpg", ".png"))));
-            blurred_mask_tensor = CustomTensorImageUtils.bitmapToFloat32Tensor(blurred_mask);
-            skeleton_tensor = TensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("people_skeleton/" + personImageName)), TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
+            loadPersonData(personImageName);
+            loadClothingData(clothingImageName);
         } catch (IOException e) {
             Log.e("loading_image", "Error reading assets", e);
             finish();
         }
 
-        personImageView = findViewById(R.id.PersonView);
-        clothingImageView = findViewById(R.id.ClothingView);
-        resultImageView = findViewById(R.id.ResultView);
-        inference_button = findViewById(R.id.InferenceButton);
-
         personImageView.setImageBitmap(person_image);
         clothingImageView.setImageBitmap(clothing_image);
         new Thread(this).start();
-
     }
 
     @Override
@@ -125,8 +151,6 @@ public class MainActivity extends AppCompatActivity implements Runnable {
             Log.e("model_error", "Error reading assets", e);
             finish();
         }
-
-        // Update UI on the main thread
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -136,6 +160,12 @@ public class MainActivity extends AppCompatActivity implements Runnable {
     }
 
     public void selectClothing(View view) {
+        Intent myIntent = new Intent(MainActivity.this, ImageSelector.class);
+        myIntent.putExtra("key", "clothing");
+        MainActivity.this.startActivity(myIntent);
+    }
+
+    public void selectPerson(View view) {
         Intent myIntent = new Intent(MainActivity.this, ImageSelector.class);
         myIntent.putExtra("key", "person");
         MainActivity.this.startActivity(myIntent);
