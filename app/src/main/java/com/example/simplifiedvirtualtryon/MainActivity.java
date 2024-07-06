@@ -12,6 +12,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 
 import org.pytorch.IValue;
 import org.pytorch.LiteModuleLoader;
@@ -26,9 +27,22 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 import java.nio.FloatBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 
 public class MainActivity extends AppCompatActivity implements Runnable {
+
+    public static float[] mean_clothing = new float[] {0.73949153f, 0.70635068f, 0.71736564f};
+    public static float[] std_clothing = new float[] {0.34867646f, 0.36374153f, 0.35065262f};
+
+    public static float[] mean_candidate = new float[] {0.74112587f, 0.69617281f, 0.68865463f};
+    public static float[] std_candidate = new float[] {0.2941623f, 0.30806473f, 0.30613222f};
+
+    public static float[] mean_skeleton = new float[] {0.05440789f, 0.07170792f, 0.04121648f};
+    public static float[] std_skeleton = new float[] {0.20046051f, 0.23692659f, 0.16482468f};
 
     private int width = 192;
     private int height = 256;
@@ -42,11 +56,8 @@ public class MainActivity extends AppCompatActivity implements Runnable {
     private ImageLoader imageLoader;
     private Bitmap person_image;
     Bitmap clothing_image;
-
-
     private Tensor people_inital_segment;
     private Tensor people_mask_tensor;
-
     private Tensor skeleton_tensor;
     private Tensor clothing_tensor;
     private Tensor clothing_mask_tensor;
@@ -76,12 +87,12 @@ public class MainActivity extends AppCompatActivity implements Runnable {
 
     private void loadPersonData(String personImageName) throws IOException {
         person_image = BitmapFactory.decodeStream(getAssets().open("people/" + personImageName));
-        people_tensor = TensorImageUtils.bitmapToFloat32Tensor(person_image, TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
+        people_tensor = TensorImageUtils.bitmapToFloat32Tensor(person_image, mean_candidate, std_candidate);
         people_mask_tensor = ProcessBitmap.standardiseMask(CustomTensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("people_mask/" + personImageName.replace(".jpg", ".png")))));
         people_inital_segment = CustomTensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("people_segment/" + personImageName.replace(".jpg", ".png"))));
         blurred_mask = ProcessBitmap.resizeMask(BitmapFactory.decodeStream(getAssets().open("people_mask/" + personImageName.replace(".jpg", ".png"))));
         blurred_mask_tensor = CustomTensorImageUtils.bitmapToFloat32Tensor(blurred_mask);
-        skeleton_tensor = TensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("people_skeleton/" + personImageName)), TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
+        skeleton_tensor = TensorImageUtils.bitmapToFloat32Tensor(BitmapFactory.decodeStream(getAssets().open("people_skeleton/" + personImageName)), mean_skeleton, std_skeleton);
         personImageView.setImageBitmap(person_image);
         }
 
@@ -133,7 +144,6 @@ public class MainActivity extends AppCompatActivity implements Runnable {
             Log.e("loading_image", "Error reading assets", e);
             finish();
         }
-
         personImageView.setImageBitmap(person_image);
         clothingImageView.setImageBitmap(clothing_image);
         new Thread(this).start();
@@ -171,7 +181,29 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         MainActivity.this.startActivity(myIntent);
     }
 
+    public Tensor concatenateFloat2Tensor(ArrayList<float[]> input_data, int channel){
+        int totalLength = 0;
+        for (int i = 0; i < input_data.size(); i++) {
+            totalLength += input_data.get(i).length;
+            }
+        float[] combinedData = new float[totalLength];
+        int cummulative_index = 0;
+
+        for (int i1 = 0; i1 < input_data.size(); i1++) {
+            float[] single_float = input_data.get(i1);
+            System.arraycopy(single_float, 0, combinedData, cummulative_index, single_float.length);
+            cummulative_index += single_float.length;
+        }
+
+        FloatBuffer inTensorBuffer = Tensor.allocateFloatBuffer(channel * 256 * 192);
+        for (float val : combinedData){
+            inTensorBuffer.put(val);}
+        Tensor inTensor = Tensor.fromBlob(inTensorBuffer, new long[]{1, channel, 256, 192});
+        return inTensor;
+    }
+
     public void swapClothing(View view) {
+        long startTime = System.currentTimeMillis(); // or System.nanoTime()
         float[] original_right_arm_float = ProcessBitmap.getLabel(people_inital_segment, 11f);
         float[] original_left_arm_float = ProcessBitmap.getLabel(people_inital_segment, 13f);
         float[] original_torso_float = ProcessBitmap.getLabel(people_inital_segment, 4f);
@@ -185,15 +217,11 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         float[] skeleton_float = skeleton_tensor.getDataAsFloatArray();
         skeleton_float = ProcessBitmap.calculateTanh(skeleton_float);
 
-        int totalLength = clothing_float.length + people_mask_float.length + skeleton_float.length;
-        float[] phpmdData = new float[totalLength];
-        System.arraycopy(people_mask_float, 0, phpmdData, 0, people_mask_float.length);
-        System.arraycopy(clothing_float, 0, phpmdData, people_mask_float.length, clothing_float.length);
-        System.arraycopy(skeleton_float, 0, phpmdData, clothing_float.length + people_mask_float.length, skeleton_float.length);
-        FloatBuffer inTensorBuffer = Tensor.allocateFloatBuffer(7 * 256 * 192);
-        for (float val : phpmdData)
-            inTensorBuffer.put(val);
-        Tensor inTensor = Tensor.fromBlob(inTensorBuffer, new long[]{1, 7, 256, 192});
+        ArrayList<float[]> input_list = new ArrayList<>();
+        input_list.add(people_mask_float);
+        input_list.add(clothing_float);
+        input_list.add(skeleton_float);
+        Tensor inTensor = concatenateFloat2Tensor(input_list, 7);
         Tensor outputTensor = segmentation_model.forward(IValue.from(inTensor)).toTensor();
 
         float[] scores = outputTensor.getDataAsFloatArray();
@@ -234,30 +262,23 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         Tensor predicted_torso_tensor = CustomTensorImageUtils.bitmapToFloat32Tensor(generated_torso);
         Tensor predicted_right_arm_tensor = CustomTensorImageUtils.bitmapToFloat32Tensor(generated_right_arm);
         Tensor predicted_left_arm_tensor = CustomTensorImageUtils.bitmapToFloat32Tensor(generated_left_arm);
-
         float[] torso_float = predicted_torso_tensor.getDataAsFloatArray();
 
-        totalLength = clothing_float.length + torso_float.length;
-        float[] affineData = new float[totalLength];
-        System.arraycopy(clothing_float, 0, affineData, 0, clothing_float.length);
-        System.arraycopy(torso_float, 0, affineData, clothing_float.length, torso_float.length);
-        inTensorBuffer = Tensor.allocateFloatBuffer(4 * 256 * 192);
-        for (float val : affineData)
-            inTensorBuffer.put(val);
-        inTensor = Tensor.fromBlob(inTensorBuffer, new long[]{1, 4, 256, 192});
+        input_list = new ArrayList<>();
+        input_list.add(clothing_float);
+        input_list.add(torso_float);
+
+        inTensor = concatenateFloat2Tensor(input_list, 4);
         outputTensor = affine_model.forward(IValue.from(inTensor)).toTensor();
         float[] affine_float = outputTensor.getDataAsFloatArray();
         affine_float = ProcessBitmap.calculateTanh(affine_float);
 
-        totalLength = affine_float.length + torso_float.length + skeleton_float.length;
-        float[] warpedData = new float[totalLength];
-        System.arraycopy(affine_float, 0, warpedData, 0, affine_float.length);
-        System.arraycopy(torso_float, 0, warpedData, affine_float.length, torso_float.length);
-        System.arraycopy(skeleton_float, 0, warpedData, affine_float.length + torso_float.length, skeleton_float.length);
-        inTensorBuffer = Tensor.allocateFloatBuffer(7 * 256 * 192);
-        for (float val : warpedData)
-            inTensorBuffer.put(val);
-        inTensor = Tensor.fromBlob(inTensorBuffer, new long[]{1, 7, 256, 192});
+        input_list = new ArrayList<>();
+        input_list.add(affine_float);
+        input_list.add(torso_float);
+        input_list.add(skeleton_float);
+
+        inTensor = concatenateFloat2Tensor(input_list,7);
         outputTensor = warping_model.forward(IValue.from(inTensor)).toTensor();
         outputTensor = ProcessBitmap.applyMask(outputTensor, predicted_torso_tensor, width, height);
         float[] warped_float = outputTensor.getDataAsFloatArray();
@@ -270,26 +291,25 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         Tensor skin_mask_tensor = CustomTensorImageUtils.bitmapToFloat32Tensor(ProcessBitmap.BitmapSpecificSegment(skin_mask, width, height));
         Tensor skin_only_tensor = ProcessBitmap.applyMask(people_tensor, skin_mask_tensor, width, height);
         float[] skin_only_float = ProcessBitmap.calculateTanh(skin_only_tensor.getDataAsFloatArray());
+        float[] skin_color_float = TensorImageUtils.bitmapToFloat32Tensor(ProcessBitmap.ger_average_color(skin_only_float, width, height),  mean_clothing, std_clothing).getDataAsFloatArray();
 
-        float[] skin_color_float = TensorImageUtils.bitmapToFloat32Tensor(ProcessBitmap.ger_average_color(skin_only_float, width, height),  TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB).getDataAsFloatArray();
+        input_list = new ArrayList<>();
+        input_list.add(img_hole_hand_float);
+        input_list.add(generate_map);
+        input_list.add(warped_float);
+        input_list.add(skin_color_float);
+        input_list.add(noise_float);
 
-        totalLength = img_hole_hand_float.length + generate_map.length + warped_float.length + skin_color_float.length + noise_float.length;
-        float[] tryOnData = new float[totalLength];
-        System.arraycopy(img_hole_hand_float, 0, tryOnData, 0, img_hole_hand_float.length);
-        System.arraycopy(generate_map, 0, tryOnData, img_hole_hand_float.length, generate_map.length);
-        System.arraycopy(warped_float, 0, tryOnData, img_hole_hand_float.length + generate_map.length, warped_float.length);
-        System.arraycopy(skin_color_float, 0, tryOnData, img_hole_hand_float.length + generate_map.length + warped_float.length, skin_color_float.length);
-        System.arraycopy(noise_float, 0, tryOnData, img_hole_hand_float.length + generate_map.length + warped_float.length + skin_color_float.length, noise_float.length);
-        inTensorBuffer = Tensor.allocateFloatBuffer(11 * 256 * 192);
-        for (float val : tryOnData)
-            inTensorBuffer.put(val);
-        inTensor = Tensor.fromBlob(inTensorBuffer, new long[]{1, 11, 256, 192});
+        inTensor = concatenateFloat2Tensor(input_list, 11);
         outputTensor = tryon_model.forward(IValue.from(inTensor)).toTensor();
         float[] finalImage = outputTensor.getDataAsFloatArray();
         finalImage = ProcessBitmap.calculateTanh(finalImage);
         Bitmap final_bmp = ProcessBitmap.RGBFloat2Bitmap(finalImage, width, height);
         resultImageView.setVisibility(View.VISIBLE);
         resultImageView.setImageBitmap(final_bmp);
-        }
+        long endTime = System.currentTimeMillis(); // or System.nanoTime()
+        long duration = endTime - startTime;
+        Toast.makeText(this, "Execution time: " + duration + " milliseconds", Toast.LENGTH_LONG).show();
 
+    }
 }
