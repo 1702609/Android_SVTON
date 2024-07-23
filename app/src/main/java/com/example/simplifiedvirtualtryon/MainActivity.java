@@ -14,6 +14,7 @@ import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
+import org.pytorch.Device;
 import org.pytorch.IValue;
 import org.pytorch.LiteModuleLoader;
 import org.pytorch.Module;
@@ -154,8 +155,8 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         try {
             segmentation_model = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "segmentation.ptl"));
             affine_model = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "affine.ptl"));
-            warping_model = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "warpingg.ptl"));
-            tryon_model = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "try_on_module.ptl"));
+            warping_model = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "gmm.ptl"));
+            tryon_model = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "tom.ptl"));
             Log.i("model_load", "Loaded all module!");
         } catch (IOException e) {
             Log.e("model_error", "Error reading assets", e);
@@ -203,6 +204,7 @@ public class MainActivity extends AppCompatActivity implements Runnable {
     }
 
     public void swapClothing(View view) {
+        inference_button.setEnabled(false);
         long startTime = System.currentTimeMillis(); // or System.nanoTime()
         float[] original_right_arm_float = ProcessBitmap.getLabel(people_inital_segment, 11f);
         float[] original_left_arm_float = ProcessBitmap.getLabel(people_inital_segment, 13f);
@@ -310,6 +312,6 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         long endTime = System.currentTimeMillis(); // or System.nanoTime()
         long duration = endTime - startTime;
         Toast.makeText(this, "Execution time: " + duration + " milliseconds", Toast.LENGTH_LONG).show();
-
+        inference_button.setEnabled(true);
     }
 }
